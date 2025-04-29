@@ -1,9 +1,0 @@
-Metadata-Version: 2.4
-Name: my_django_package
-Version: 0.1.0
-Classifier: Framework :: Django
-Classifier: Programming Language :: Python :: 3
-Requires-Dist: Django>=3.2
-Requires-Dist: djangorestframework
-Dynamic: classifier
-Dynamic: requires-dist

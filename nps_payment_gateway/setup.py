@@ -1,12 +1,12 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='my_django_package',
+    name='nps_payment_gateway',
     version='0.1.0',
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
-        'Django>=3.2',
+        'Django>=4.2.7',
         'djangorestframework'
     ],
     classifiers=[
