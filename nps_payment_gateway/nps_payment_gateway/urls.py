@@ -5,7 +5,8 @@ from .views import (
     PaymentInstrumentView,
     ProcessIdView,
     NotificationView,
-    ServiceChargeView
+    ServiceChargeView,
+
 )
 
 router = DefaultRouter()
@@ -17,4 +18,5 @@ urlpatterns = [
     path('process-id/', ProcessIdView.as_view(), name='process-id'),
     path('notification/', NotificationView.as_view(), name='notification'),
     path('service-charge/', ServiceChargeView.as_view(), name='service-charge'),
+
 ]

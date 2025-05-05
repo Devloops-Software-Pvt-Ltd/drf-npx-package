@@ -16,9 +16,11 @@ from .serializers import (
     ServiceChargeRequestSerializer,
     PaymentInstrumentResponseSerializer,
     ServiceChargeResponseSerializer,
-    ProcessIdResponseSerializer,
-    TransactionStatusResponseSerializer
+
 )
+from datetime import datetime
+from django.http import HttpResponse
+from rest_framework.permissions import AllowAny
 
 
 
@@ -173,27 +175,31 @@ class NPSBaseAPIView(APIView):
         try:
             response = requests.post(url, json=payload, headers=headers)
             
-            # Log the request and response for debugging
-            print(f"Request URL: {url}")
-            print(f"Request Payload: {payload}")
-            print(f"Response Status: {response.status_code}")
-            print(f"Response Content: {response.text}")
-            
             # Check for HTTP errors
             if response.status_code >= 400:
-                error_message = f"HTTP {response.status_code}: {response.text}"
                 return {
                     "code": "1",
                     "message": "Error",
                     "errors": [{
                         "error_code": str(response.status_code),
-                        "error_message": error_message
+                        "error_message": f"HTTP {response.status_code}: {response.text}"
                     }]
                 }
             
             # Parse JSON response
             try:
-                return response.json()
+                response_data = response.json()
+                # Ensure response has required fields
+                if not isinstance(response_data, dict):
+                    return {
+                        "code": "1",
+                        "message": "Error",
+                        "errors": [{
+                            "error_code": "500",
+                            "error_message": "Invalid response format from server"
+                        }]
+                    }
+                return response_data
             except ValueError:
                 return {
                     "code": "1",
@@ -287,6 +293,7 @@ class PaymentInstrumentView(NPSBaseAPIView):
             serializer = PaymentInstrumentRequestSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
 
+            # Fetch NPS config
             nps_config = self.get_nps_config()
             
             payload = {
@@ -296,24 +303,30 @@ class PaymentInstrumentView(NPSBaseAPIView):
 
             signature_string = f"{payload['MerchantId']}{payload['MerchantName']}"
             payload["Signature"] = self.generate_hmac_sha512(
-                signature_string, 
+                signature_string,
                 nps_config.gateway_api_secret_key
             )
 
+            # Make API request
             response_data = self.make_api_request(
                 'https://apisandbox.nepalpayment.com/GetPaymentInstrumentDetails',
                 payload,
                 self.get_headers(nps_config)
             )
-            
+
+            # Handle the response via the existing `handle_response`
             return self.handle_response(response_data, PaymentInstrumentResponseSerializer)
 
-        except serializer.ValidationError as e:
+        except serializers.ValidationError as e:
             return self.get_error_response(e.detail)
         except ValueError as e:
             return self.get_error_response(str(e))
         except Exception as e:
-            return self.get_error_response(str(e), "500", status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return self.get_error_response(
+                str(e),
+                error_code="500",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class ServiceChargeView(NPSBaseAPIView):
     """API view for getting service charges"""
@@ -362,7 +375,7 @@ class ProcessIdView(NPSBaseAPIView):
             serializer = ProcessIdRequestSerializer(data=request.data)
             if not serializer.is_valid():
                 return self.get_error_response(serializer.errors)
-
+            
             nps_config = self.get_nps_config()
             
             payload = {
@@ -387,72 +400,111 @@ class ProcessIdView(NPSBaseAPIView):
                 self.get_headers(nps_config)
             )
             
-            return self.handle_response(response_data, ProcessIdResponseSerializer)
-
-        except serializer.ValidationError as e:
-            return self.get_error_response(e.detail)
+            # Handle the response data properly
+            if response_data.get('code') == '0':
+                # For success response, ensure data is present
+                if 'data' not in response_data:
+                    response_data['data'] = {'ProcessId': response_data.get('ProcessId', '')}
+                return Response(response_data, status=status.HTTP_200_OK)
+            else:
+                # For error response, return as is
+                return Response(response_data, status=status.HTTP_400_BAD_REQUEST)
+            
         except ValueError as e:
             return self.get_error_response(str(e))
         except Exception as e:
-            return self.get_error_response(str(e), "500", status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return self.get_error_response(
+                f"Error processing payment: {str(e)}",
+                error_code="500",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+
 
 class NotificationView(NPSBaseAPIView):
     """API view for handling NPS notifications"""
     
-    def get(self, request):
+    def post(self, request):
         try:
-            serializer = NotificationRequestSerializer(data=request.query_params)
-            serializer.is_valid(raise_exception=True)
+            # 1. Validate request data
+            request_serializer = NotificationRequestSerializer(data=request.data)
+            request_serializer.is_valid(raise_exception=True)
+            merchant_txn_id = request_serializer.validated_data['merchant_txn_id']
 
+            # 2. Get NPS config
             nps_config = self.get_nps_config()
-            
+
+            # 3. Build payload
             payload = {
                 "MerchantId": nps_config.merchant_id,
                 "MerchantName": nps_config.merchant_name,
-                "MerchantTxnId": serializer.validated_data['merchant_txn_id']
+                "MerchantTxnId": merchant_txn_id
             }
 
-            signature_string = (
-                f"{payload['MerchantId']}{payload['MerchantName']}"
-                f"{payload['MerchantTxnId']}"
-            )
+            # 4. Generate HMAC signature
+            signature_string = f"{payload['MerchantId']}{payload['MerchantName']}{payload['MerchantTxnId']}"
             payload["Signature"] = self.generate_hmac_sha512(
                 signature_string, 
                 nps_config.gateway_api_secret_key
             )
 
+            # 5. Make external API call
             response_data = self.make_api_request(
                 'https://apisandbox.nepalpayment.com/CheckTransactionStatus',
                 payload,
                 self.get_headers(nps_config)
             )
 
-            # Handle transaction status response
-            status_response = self.handle_response(response_data, TransactionStatusResponseSerializer)
-            
-            # If transaction is successful (code "0"), return "received"
-            if response_data.get('code') == "0":
-                return Response(
-                    "received",
-                    content_type="text/plain",
-                    status=status.HTTP_200_OK
-                )
-            
-            # For pending transactions (code "2"), return "in process"
-            if response_data.get('code') == "2":
-                return Response(
-                    "in process",
-                    content_type="text/plain",
-                    status=status.HTTP_202_ACCEPTED
-                )
-            
-            # For failed transactions (code "1"), return error response
-            return status_response
+            # 6. Check if 'data' is None before accessing it
+            if response_data.get("data") is None:
+                raise ValueError("No transaction data returned from the payment gateway.")
+
+            # 7. Handle response status
+            txn_status = response_data["data"].get("Status", "").lower()
+
+            if txn_status == "success":
+                return Response({
+                    "status": "success",
+                    "message": "Payment successful",
+                    "data": response_data["data"]
+                }, status=200)
+
+            elif txn_status == "pending":
+                return Response({
+                    "status": "pending",
+                    "message": "Payment  pending",
+                    "data": response_data["data"]
+                }, status=202)
+
+            else:
+                return Response({
+                    "status": "fail",
+                    "message": f"Payment failed: {response_data['data'].get('CbsMessage', 'Unknown error')}",
+                    "data": response_data["data"]
+                }, status=400)
 
         except ValueError as e:
-            return self.get_error_response(str(e))
+            return Response({
+                "status": "error",
+                "message": str(e),
+                "details": request_serializer.errors
+            }, status=400)
+
         except Exception as e:
-            return self.get_error_response(str(e), "500", status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({
+                "status": "error",
+                "message": "An internal server error occurred.",
+                "details": str(e)
+            }, status=500)
+
+
+
+
+
+
+
+
 
 
 

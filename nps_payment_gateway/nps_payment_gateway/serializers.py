@@ -42,12 +42,6 @@ class PaymentInstrumentResponseSerializer(BaseResponseSerializer):
     data = PaymentInstrumentDataSerializer(many=True, required=False)
 
     def validate(self, data):
-        """
-        Validate that data is present for success response
-        """
-        data = super().validate(data)
-        if data.get('code') == '0' and not data.get('data'):
-            raise serializers.ValidationError("Data must be present when code is '0'")
         return data
 
 # Service Charge Serializers
@@ -73,9 +67,6 @@ class ServiceChargeResponseSerializer(BaseResponseSerializer):
     data = ServiceChargeDataSerializer(required=False)
 
     def validate(self, data):
-        data = super().validate(data)
-        if data.get('code') == '0' and not data.get('data'):
-            raise serializers.ValidationError("Data must be present when code is '0'")
         return data
 
 # Process ID Serializers
@@ -83,9 +74,17 @@ class ProcessIdRequestSerializer(serializers.Serializer):
     amount = serializers.DecimalField(
         max_digits=10, 
         decimal_places=2,
-        min_value=0.01
+        min_value=0.01,
+        error_messages={
+            'required': 'Amount is required for payment processing'
+        }
     )
-    merchant_txn_id = serializers.CharField(max_length=50)
+    merchant_txn_id = serializers.CharField(
+        max_length=50,
+        error_messages={
+            'required': 'Merchant Transaction ID is required'
+        }
+    )
 
     def validate_merchant_txn_id(self, value):
         """
@@ -104,9 +103,6 @@ class ProcessIdResponseSerializer(BaseResponseSerializer):
     data = ProcessIdDataSerializer(required=False)
 
     def validate(self, data):
-        data = super().validate(data)
-        if data.get('code') == '0' and not data.get('data'):
-            raise serializers.ValidationError("Data must be present when code is '0'")
         return data
 
 # Transaction Status Serializers
@@ -134,25 +130,12 @@ class TransactionStatusResponseSerializer(BaseResponseSerializer):
     data = TransactionStatusDataSerializer(required=False)
 
     def validate(self, data):
-        data = super().validate(data)
-        if data.get('code') == '0' and not data.get('data'):
-            raise serializers.ValidationError("Data must be present when code is '0'")
         return data
 
 # Notification Serializers
 class NotificationRequestSerializer(serializers.Serializer):
-    merchant_txn_id = serializers.CharField()
-    gateway_txn_id = serializers.CharField()
-
-    def validate(self, data):
-        """
-        Cross-field validation if needed
-        """
-        if data['merchant_txn_id'] == data['gateway_txn_id']:
-            raise serializers.ValidationError(
-                "Merchant transaction ID and Gateway transaction ID cannot be the same"
-            )
-        return data
+    merchant_txn_id = serializers.CharField(required=True, allow_blank=False)
+    gateway_txn_id = serializers.CharField(required=True, allow_blank=False)
 
 # NPS Payment Configuration Serializer
 class NpsPaymentSerializer(serializers.ModelSerializer):
@@ -195,4 +178,15 @@ class NpsPaymentSerializer(serializers.ModelSerializer):
         if not value.strip():
             raise serializers.ValidationError("Merchant name cannot be empty")
         return value
+
+
+
+
+class NPSErrorSerializer(serializers.Serializer):
+    error_code = serializers.CharField()
+    error_message = serializers.CharField()
+
+
+
+
 
