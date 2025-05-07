@@ -23,7 +23,7 @@ from django.http import HttpResponse
 from rest_framework.permissions import AllowAny
 
 
-
+from rest_framework import serializers
 class NpsPaymentViewSet(viewsets.ModelViewSet):
     """ViewSet for managing NPS Payment configurations"""
     
@@ -268,7 +268,7 @@ class NPSBaseAPIView(APIView):
                     "code": "2",
                     "message": response_data.get('message', 'Transaction in process'),
                     "data": response_data.get('data', {})
-                }, status=status.HTTP_202_ACCEPTED)
+                }, status=status.HTTP_200_OK)
                 
             else:
                 # Unexpected code
@@ -475,7 +475,7 @@ class NotificationView(NPSBaseAPIView):
                     "status": "pending",
                     "message": "Payment  pending",
                     "data": response_data["data"]
-                }, status=202)
+                }, status=200)
 
             else:
                 return Response({
