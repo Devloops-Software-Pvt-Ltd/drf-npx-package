@@ -268,7 +268,7 @@ class NPSBaseAPIView(APIView):
                     "code": "2",
                     "message": response_data.get('message', 'Transaction in process'),
                     "data": response_data.get('data', {})
-                }, status=status.HTTP_200_OK)
+                }, status=status.HTTP_202_ACCEPTED)
                 
             else:
                 # Unexpected code
@@ -429,9 +429,17 @@ class NotificationView(NPSBaseAPIView):
         try:
             # 1. Validate request data
             request_serializer = NotificationRequestSerializer(data=request.data)
-            request_serializer.is_valid(raise_exception=True)
+            if not request_serializer.is_valid():
+                return Response({
+                    "code": "1",
+                    "message": "Error",
+                    "errors": [{
+                        "error_code": "400",
+                        "error_message": request_serializer.errors
+                    }]
+                }, status=400)
             merchant_txn_id = request_serializer.validated_data['merchant_txn_id']
-
+      
             # 2. Get NPS config
             nps_config = self.get_nps_config()
 
