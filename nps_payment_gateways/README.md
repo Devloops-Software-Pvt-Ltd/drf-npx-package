@@ -11,7 +11,7 @@ Installation
 
 Install the package using pip:
 
-bashpip install nps-payment-gateway
+pip install nps-payment-gateways
 Or add it directly to your requirements.txt file.
 Setup
 
@@ -19,7 +19,7 @@ Add to INSTALLED_APPS
 In your settings.py, include:
 pythonINSTALLED_APPS = [
 ...
-'nps_payment_gateway',
+'nps_payment_gateways',
 ]
 
 Add URLs to your project in core
@@ -28,17 +28,12 @@ pythonfrom django.urls import path, include
 
 urlpatterns = [
 ...
-path('api/', include('nps_payment_gateway.urls')),
+path('api/', include('nps_payment_gateways.urls')),
 ]
 
-Run migrations
-bashpython manage.py makemigrations nps_payment_gateway
+Run migrations\
+
+<!-- Migrate in tenant  -->
+
+python manage.py makemigrations nps_payment_gateways
 python manage.py migrate
-
-Apis
-path('', include(router.urls)),
-path('payment-instruments/', PaymentInstrumentView.as_view(), name='payment-instruments'),
-path('process-id/', ProcessIdView.as_view(), name='process-id'),
-path('notification/', NotificationView.as_view(), name='notification'),
-path('service-charge/', ServiceChargeView.as_view(), name='service-charge'),
-]
