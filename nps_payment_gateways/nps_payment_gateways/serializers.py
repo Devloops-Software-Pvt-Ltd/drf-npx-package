@@ -141,27 +141,11 @@ class NotificationRequestSerializer(serializers.Serializer):
 class NpsPaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = NpsPayment
-        fields = [
-            'id',
-            'merchant_id',
-            'merchant_name',
-            'api_username',
-            'api_password',
-            'gateway_api_secret_key'
-        ]
-        extra_kwargs = {
-            'api_password': {'write_only': True},
-            'gateway_api_secret_key': {'write_only': True}
-        }
+        fields = '__all__'
 
     def to_representation(self, instance):
-        """Override to_representation to only return specific fields"""
         data = super().to_representation(instance)
-        return {
-            'id': data['id'],
-            'merchant_id': data['merchant_id'],
-            'merchant_name': data['merchant_name']
-        }
+        return data
 
     def validate_merchant_id(self, value):
         """

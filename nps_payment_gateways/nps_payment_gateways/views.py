@@ -28,8 +28,9 @@ class NpsPaymentViewSet(viewsets.ModelViewSet):
         serializer = self.serializer_class(payments, many=True)
         return Response({"code": "0", "message": "Payment configurations retrieved successfully.", "data": serializer.data})
 
+    
     def create(self, request, *args, **kwargs):
-        if self.queryset.exists():
+        if NpsPayment.objects.exists():
             return Response({
                 "code": "1",
                 "message": "Only one configuration is allowed. Please update the existing one.",
@@ -39,9 +40,18 @@ class NpsPaymentViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             self.perform_create(serializer)
-            return Response({"code": "0", "message": "Configuration saved successfully.", "data": serializer.data}, status=status.HTTP_201_CREATED)
+            return Response({
+                "code": "0",
+                "message": "Configuration saved successfully.",
+                "data": serializer.data
+            }, status=status.HTTP_201_CREATED)
 
-        return Response({"code": "1", "message": "Invalid input.", "error_code": "400", "errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            "code": "1",
+            "message": "Invalid input.",
+            "error_code": "400",
+            "errors": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
