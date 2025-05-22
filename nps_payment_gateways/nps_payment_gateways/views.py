@@ -26,9 +26,12 @@ class NpsPaymentViewSet(viewsets.ModelViewSet):
     def list(self, request):
         payments = self.queryset
         serializer = self.serializer_class(payments, many=True)
-        return Response({"code": "0", "message": "Payment configurations retrieved successfully.", "data": serializer.data})
+        return Response({
+            "code": "0", 
+            "message": "Payment configurations retrieved successfully.", 
+            "data": serializer.data
+        })
 
-    
     def create(self, request, *args, **kwargs):
         if NpsPayment.objects.exists():
             return Response({
@@ -58,9 +61,18 @@ class NpsPaymentViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance, data=request.data, partial=kwargs.pop('partial', False))
         if serializer.is_valid():
             self.perform_update(serializer)
-            return Response({"code": "0", "message": "Configuration updated successfully.", "data": serializer.data}, status=status.HTTP_200_OK)
+            return Response({
+                "code": "0", 
+                "message": "Configuration updated successfully.", 
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
 
-        return Response({"code": "1", "message": "Update failed due to invalid input.", "error_code": "400", "errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            "code": "1", 
+            "message": "Update failed due to invalid input.", 
+            "error_code": "400", 
+            "errors": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 class NPSBaseAPIView(APIView):
     def get_nps_config(self):
@@ -88,8 +100,33 @@ class NPSBaseAPIView(APIView):
         except Exception:
             raise ValueError("Failed to create request headers.")
 
-    def get_error_response(self, message, error_code="400", status_code=status.HTTP_400_BAD_REQUEST):
-        return Response({"code": "1", "message": message, "error_code": error_code}, status=status_code)
+    def get_error_response(self, message, error_code="400", status_code=status.HTTP_400_BAD_REQUEST, errors=None):
+        response = {
+            "code": "1",
+            "message": message,
+            "error_code": error_code,
+        }
+        if errors:
+            response["errors"] = errors
+        return Response(response, status=status_code)
+
+    def get_success_response(self, message, data=None, status_code=status.HTTP_200_OK):
+        response = {
+            "code": "0",
+            "message": message,
+        }
+        if data:
+            response["data"] = data
+        return Response(response, status=status_code)
+
+    def get_processing_response(self, message, data=None):
+        response = {
+            "code": "2",
+            "message": message,
+        }
+        if data:
+            response["data"] = data
+        return Response(response, status=status.HTTP_202_ACCEPTED)
 
     def make_api_request(self, url, payload, headers):
         try:
@@ -103,15 +140,19 @@ class NPSBaseAPIView(APIView):
         except Exception:
             return {"code": "1", "message": "Unable to connect to the payment server.", "error_code": "500"}
 
-    def handle_response(self, response_data, serializer_class):
+    def handle_response(self, response_data, serializer_class, success_message="Success."):
         if response_data.get('code') == '0':
             serializer = serializer_class(data=response_data)
             if serializer.is_valid():
-                return Response({"code": "0", "message": "Success.", "data": serializer.data}, status=status.HTTP_200_OK)
-            return self.get_error_response("Invalid data format received from payment server.")
+                return self.get_success_response(success_message, serializer.data)
+            return self.get_error_response("Invalid data format received from payment server.", error_code="500", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
         elif response_data.get('code') == '2':
-            return Response({"code": "2", "message": "Processing.", "data": response_data.get("data", {})}, status=status.HTTP_202_ACCEPTED)
-        return self.get_error_response(response_data.get("message", "Unknown error occurred."))
+            return self.get_processing_response("Processing.", response_data.get("data", {}))
+        return self.get_error_response(
+            response_data.get("message", "Unknown error occurred."),
+            error_code=response_data.get("error_code", "400"),
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
 
 class PaymentInstrumentView(NPSBaseAPIView):
     def post(self, request):
@@ -125,12 +166,12 @@ class PaymentInstrumentView(NPSBaseAPIView):
             }
             payload["Signature"] = self.generate_hmac_sha512(payload["MerchantId"] + payload["MerchantName"], config.gateway_api_secret_key)
             response_data = self.make_api_request("https://apisandbox.nepalpayment.com/GetPaymentInstrumentDetails", payload, self.get_headers(config))
-            return self.handle_response(response_data, PaymentInstrumentResponseSerializer)
+            return self.handle_response(response_data, PaymentInstrumentResponseSerializer, "Payment instruments retrieved successfully.")
         except serializers.ValidationError as e:
-            return self.get_error_response("Invalid request input.")
+            return self.get_error_response("Invalid request input.", errors=e.detail)
         except ValueError as e:
-            return self.get_error_response(str(e))
-        except Exception:
+            return self.get_error_response(str(e), error_code="400")
+        except Exception as e:
             return self.get_error_response("An unexpected error occurred.", error_code="500", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class ServiceChargeView(NPSBaseAPIView):
@@ -148,15 +189,21 @@ class ServiceChargeView(NPSBaseAPIView):
             signature_str = f"{payload['Amount']}{payload['MerchantId']}{payload['MerchantName']}{payload['InstrumentCode']}"
             payload["Signature"] = self.generate_hmac_sha512(signature_str, config.gateway_api_secret_key)
             response_data = self.make_api_request("https://apisandbox.nepalpayment.com/GetServiceCharge", payload, self.get_headers(config))
-            return self.handle_response(response_data, ServiceChargeResponseSerializer)
+            return self.handle_response(response_data, ServiceChargeResponseSerializer, "Service charge retrieved successfully.")
+        except serializers.ValidationError as e:
+            return self.get_error_response("Invalid request input.", errors=e.detail)
+        except ValueError as e:
+            return self.get_error_response(str(e), error_code="400")
         except Exception as e:
-            return self.get_error_response(str(e), "500")
+            return self.get_error_response("An unexpected error occurred.", error_code="500", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class ProcessIdView(NPSBaseAPIView):
     def post(self, request):
         try:
             serializer = ProcessIdRequestSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
+            TransactionRemarks = request.data.get('TransactionRemarks')
+            InstrumentCode = request.data.get('InstrumentCode') 
             config = self.get_nps_config()
             payload = {
                 "MerchantId": config.merchant_id,
@@ -164,14 +211,47 @@ class ProcessIdView(NPSBaseAPIView):
                 "Amount": str(serializer.validated_data['amount']),
                 "MerchantTxnId": serializer.validated_data['merchant_txn_id']
             }
+
             signature_str = f"{payload['Amount']}{payload['MerchantId']}{payload['MerchantName']}{payload['MerchantTxnId']}"
             payload["Signature"] = self.generate_hmac_sha512(signature_str, config.gateway_api_secret_key)
-            response_data = self.make_api_request("https://apisandbox.nepalpayment.com/GetProcessId", payload, self.get_headers(config))
+
+            response_data = self.make_api_request(
+                "https://apisandbox.nepalpayment.com/GetProcessId",
+                payload,
+                self.get_headers(config)
+            )
+
             if response_data.get('code') == '0':
-                return Response({"code": "0", "message": "Process ID fetched successfully.", "data": response_data.get('data', {})}, status=status.HTTP_200_OK)
-            return self.get_error_response(response_data.get("message", "Could not retrieve process ID."))
-        except Exception:
-            return self.get_error_response("Failed to get process ID.", "500")
+                return self.get_success_response(
+                    "Process ID retrieved successfully.",
+                    {
+                        "MerchantId": payload["MerchantId"],
+                        "MerchantName": payload["MerchantName"],
+                        "Amount": payload["Amount"],
+                        "MerchantTxnId": payload["MerchantTxnId"],
+                        "Signature": payload["Signature"],
+                        "TransactionRemarks":TransactionRemarks,
+                        "InstrumentCode":InstrumentCode,
+                        "ProcessId": response_data["data"]["ProcessId"]
+                    }
+                )
+            else:
+                return self.get_error_response(
+                    response_data.get("message", "Could not retrieve process ID."),
+                    error_code=response_data.get("error_code", "400"),
+                    errors=response_data.get("errors", [])
+                )
+
+        except serializers.ValidationError as e:
+            return self.get_error_response("Invalid request input.", errors=e.detail)
+        except ValueError as e:
+            return self.get_error_response(str(e), error_code="400")
+        except Exception as e:
+            return self.get_error_response(
+                "An unexpected error occurred.",
+                error_code="500",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class NotificationView(NPSBaseAPIView):
     def post(self, request):
@@ -180,21 +260,33 @@ class NotificationView(NPSBaseAPIView):
             serializer.is_valid(raise_exception=True)
             merchant_txn_id = serializer.validated_data['merchant_txn_id']
             config = self.get_nps_config()
+
             payload = {
                 "MerchantId": config.merchant_id,
                 "MerchantName": config.merchant_name,
                 "MerchantTxnId": merchant_txn_id
             }
-            payload["Signature"] = self.generate_hmac_sha512(f"{payload['MerchantId']}{payload['MerchantName']}{payload['MerchantTxnId']}", config.gateway_api_secret_key)
-            response_data = self.make_api_request("https://apisandbox.nepalpayment.com/CheckTransactionStatus", payload, self.get_headers(config))
-            txn_data = response_data.get("data")
-            if not txn_data:
-                raise ValueError("No transaction information returned.")
-            status_str = txn_data.get("Status", "").lower()
-            if status_str == "success":
-                return Response({"code": "0", "message": "Payment successful.", "data": txn_data}, status=200)
-            elif status_str == "pending":
-                return Response({"code": "2", "message": "Payment is pending.", "data": txn_data}, status=200)
-            return Response({"code": "1", "message": f"Payment failed. Reason: {txn_data.get('CbsMessage', 'Unknown error')}", "data": txn_data}, status=400)
+            payload["Signature"] = self.generate_hmac_sha512(
+                f"{payload['MerchantId']}{payload['MerchantName']}{payload['MerchantTxnId']}",
+                config.gateway_api_secret_key
+            )
+
+            response_data = self.make_api_request(
+                "https://apisandbox.nepalpayment.com/CheckTransactionStatus",
+                payload,
+                self.get_headers(config)
+            )
+
+            # Just return the raw response data from the API
+            return Response(response_data)
+
+        except serializers.ValidationError as e:
+            return self.get_error_response("Invalid request input.", errors=e.detail)
+        except ValueError as e:
+            return self.get_error_response(str(e), error_code="400")
         except Exception as e:
-            return self.get_error_response("Could not process payment notification.", error_code="500", status_code=500)
+            return self.get_error_response(
+                "Could not process payment notification.",
+                error_code="500",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

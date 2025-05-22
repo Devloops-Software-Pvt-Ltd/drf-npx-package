@@ -72,7 +72,7 @@ class ServiceChargeResponseSerializer(BaseResponseSerializer):
 # Process ID Serializers
 class ProcessIdRequestSerializer(serializers.Serializer):
     amount = serializers.DecimalField(
-        max_digits=10, 
+        max_digits=15, 
         decimal_places=2,
         min_value=0.01,
         error_messages={
@@ -83,6 +83,18 @@ class ProcessIdRequestSerializer(serializers.Serializer):
         max_length=50,
         error_messages={
             'required': 'Merchant Transaction ID is required'
+        }
+    )
+    TransactionRemarks = serializers.CharField(
+        max_length=255,
+        error_messages={
+            'required': 'TransactionRemarks is required'
+        }
+    )
+    InstrumentCode = serializers.CharField(
+        max_length=255,
+        error_messages={
+            'required': 'TransactionRemarks is required'
         }
     )
 
