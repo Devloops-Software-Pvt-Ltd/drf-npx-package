@@ -151,6 +151,7 @@ class NotificationRequestSerializer(serializers.Serializer):
 
 # NPS Payment Configuration Serializer
 class NpsPaymentSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False) 
     class Meta:
         model = NpsPayment
         fields = '__all__'
