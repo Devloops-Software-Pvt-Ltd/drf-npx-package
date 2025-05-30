@@ -24,7 +24,7 @@ class NpsPaymentViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'put', 'patch']
 
     def list(self, request):
-        payments = self.queryset
+        payments = self.get_queryset()
         serializer = self.serializer_class(payments, many=True)
         return Response({
             "code": "0", 
